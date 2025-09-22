@@ -4,9 +4,8 @@
   "main": "index.js",
   "scripts": {
     "build": "pnpm run client:prod",
-    "start:prod": "http-server dist -p 3000 -s",
+    "start:prod": "serve -s dist -l 3000",
     "test:e2e:ci": "cypress run",
-
     "client:dev": "scripty",
     "client:server": "webpack serve --mode development",
     "client:prod": "webpack --mode production",
@@ -77,6 +76,7 @@
     "prettier": "^3.6.2",
     "scripty": "^3.0.0",
     "selenium-webdriver": "^4.35.0",
+    "serve": "^14.2.5",
     "start-server-and-test": "^2.1.2",
     "swc-loader": "^0.2.6",
     "tailwindcss": "^4.1.13",
