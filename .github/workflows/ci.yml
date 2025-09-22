@@ -1,51 +1,45 @@
 name: CI
-run-name: "CI • ${{ github.ref_name }}"
 
 on:
-  pull_request:
+  pull_request:          # 提 PR 自动触发
+  push:                  # 推 main 也触发（合并后兜底再测一遍）
     branches: [ main ]
-  push:
-    branches: [ main ]
-
-# 同一分支重复推送时，取消排队中的旧任务，节省 CI 分钟
-concurrency:
-  group: "${{ github.workflow }}-${{ github.ref }}"
-  cancel-in-progress: true
 
 jobs:
+  # ========== Job 1：单元测试 ==========
   unit:
     name: Unit Tests (Jest)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4     # 拉代码
+        uses: actions/checkout@v4        # 1) 拉取仓库代码
 
       - name: Setup Node
-        uses: actions/setup-node@v4   # 装 Node，并启用 pnpm 缓存
+        uses: actions/setup-node@v4      # 2) 安装 Node（只装 Node，不做包管理缓存）
         with:
           node-version: '20'
-          cache: 'pnpm'               # 关键：使用 pnpm 缓存
-          cache-dependency-path: |
-            pnpm-lock.yaml            # 指定锁文件（单包即可；monorepo 就多列几行）
 
-      - name: Enable corepack (use packageManager)
-        run: corepack enable          # 让 Node 按 package.json 的 packageManager 安装 pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4       # 3) 安装 pnpm，并开启基于 pnpm-lock.yaml 的缓存
+        with:
+          # 建议在 package.json 写 "packageManager": "pnpm@9.x"，这里就不用显式指定 version
+          run_install: false             # 此步只装 pnpm，本步不安装依赖
 
       - name: Show pnpm version
-        run: pnpm -v                  # 仅用于日志确认版本，非必需
+        run: pnpm -v                     # 4) 打印版本，确认和本地一致（可删）
 
       - name: Install deps
-        run: pnpm install --frozen-lockfile  # 严格按锁文件安装，等价 npm ci
+        run: pnpm install --frozen-lockfile   # 5) 严格按 pnpm-lock.yaml 安装，等价 npm ci
 
       - name: Lint (optional but recommended)
-        run: pnpm run lint
+        run: pnpm run lint               # 6) 代码规范检查（可按需关闭）
 
       - name: Unit tests
-        run: pnpm run test:unit
+        run: pnpm run test:unit          # 7) 跑 Jest 单测（你脚本里已配置）
 
       - name: Upload Jest coverage & report
-        if: success() || failure()
+        if: success() || failure()       # 8) 不论成功失败都上传产物，方便排查
         uses: actions/upload-artifact@v4
         with:
           name: jest-coverage-and-report
@@ -54,46 +48,46 @@ jobs:
             docs/jest-stare/**
           if-no-files-found: ignore
 
+  # ========== Job 2：E2E（Cypress） ==========
   e2e:
     name: E2E (Cypress)
     runs-on: ubuntu-latest
-    needs: unit                       # 单测先过，再跑 e2e
+    needs: unit                          # 先确保单测通过，再跑 e2e（省时间、好定位）
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4        # 1) 拉代码
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4      # 2) 装 Node
         with:
           node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: |
-            pnpm-lock.yaml
 
-      - name: Enable corepack (use packageManager)
-        run: corepack enable
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4       # 3) 装 pnpm + 启用缓存
+        with:
+          run_install: false
 
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile   # 4) 安装依赖
 
       - name: Build app
-        run: pnpm run build           # 你脚本里把 build 指到 webpack 生产构建
+        run: pnpm run build               # 5) 生产构建（你已让 build 指向 webpack --mode production）
 
       - name: Run Cypress
-        uses: cypress-io/github-action@v6
+        uses: cypress-io/github-action@v6 # 6) 官方 Cypress Action（省去浏览器/Xvfb 自配）
         with:
-          start: pnpm run start:prod  # http-server 启 dist
-          wait-on: 'http://localhost:3000'
-          wait-on-timeout: 120
-          command: pnpm run test:e2e:ci
-          browser: chrome
+          start: pnpm run start:prod      # 启静态服务器：http-server dist -p 3000 -s
+          wait-on: 'http://localhost:3000' # 等待服务就绪，避免“端口未起”导致偶发红
+          wait-on-timeout: 120            # 最多等 120s
+          command: pnpm run test:e2e:ci   # 无头跑 e2e：cypress run
+          browser: chrome                 # 用 Chrome，更贴近真实用户（也可改 electron 更快）
           headed: false
         env:
-          CYPRESS_baseUrl: http://localhost:3000
+          CYPRESS_baseUrl: http://localhost:3000   # 与 cypress.config.ts 的 baseUrl 对齐
 
       - name: Upload Cypress artifacts on failure
-        if: failure()
+        if: failure()                     # 7) 仅失败时上传视频/截图，方便远程排查
         uses: actions/upload-artifact@v4
         with:
           name: cypress-artifacts

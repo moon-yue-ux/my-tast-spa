@@ -20,6 +20,7 @@
     "lint:staged": "npx @biomejs/biome check --write ./src",
     "prepare": "husky"
   },
+  "packageManager": "pnpm@10.15.0",
   "keywords": [],
   "author": "",
   "license": "ISC",
