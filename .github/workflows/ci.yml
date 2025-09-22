@@ -1,85 +1,103 @@
-name: CI   # 工作流名字，会显示在 GitHub Actions 界面里
+name: CI
+run-name: "CI • ${{ github.ref_name }}"
 
-on:        # 触发条件
-  pull_request:   # 提交 PR 时触发
-  push:           # 直接 push 到 main 分支时触发
+on:
+  pull_request:
+    branches: [ main ]
+  push:
     branches: [ main ]
 
-jobs:   # 定义多个 Job（任务），可以并行或依赖执行
+# 同一分支重复推送时，取消排队中的旧任务，节省 CI 分钟
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
 
-  unit:   # 第一个 Job：跑单元测试
+jobs:
+  unit:
     name: Unit Tests (Jest)
-    runs-on: ubuntu-latest   # 在 GitHub 提供的 Ubuntu 虚拟机上跑
-
-    steps:   # 每个 Job 包含一系列步骤
-      - name: Checkout
-        uses: actions/checkout@v4   # 拉取当前仓库代码到 runner 环境
-
-      - name: Setup Node
-        uses: actions/setup-node@v4 # 安装 Node.js 环境
-        with:
-          node-version: '20'        # 这里指定 Node 20（稳定且最新 LTS）
-          cache: 'npm'              # 缓存 node_modules，加快二次构建速度
-
-      - name: Install deps
-        run: npm ci                 # 安装依赖，ci 保证一致性（锁定 package-lock）
-
-      - name: Lint (optional but recommended)
-        run: npm run lint           # 跑 ESLint 检查代码风格（非必须，但推荐）
-
-      - name: Unit tests
-        run: npm run test:unit      # 执行单元测试（Jest）
-
-      - name: Upload Jest coverage & report
-        if: success() || failure()  # 无论测试成功还是失败都执行（方便排查）
-        uses: actions/upload-artifact@v4
-        with:
-          name: jest-coverage-and-report  # 上传产物的名字
-          path: |                         # 指定要保存的目录
-            coverage/**                   # Jest 生成的覆盖率文件
-            docs/jest-stare/**            # Jest-stare 报告
-          if-no-files-found: ignore       # 如果没找到文件就忽略，不报错
-
-
-  e2e:   # 第二个 Job：跑 Cypress E2E 测试
-    name: E2E (Cypress)
     runs-on: ubuntu-latest
-    needs: unit                # 等 unit job 先跑完（保证单元测过了再跑 e2e）
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4   # 同样先拉取代码
+        uses: actions/checkout@v4     # 拉代码
+
+      - name: Setup Node
+        uses: actions/setup-node@v4   # 装 Node，并启用 pnpm 缓存
+        with:
+          node-version: '20'
+          cache: 'pnpm'               # 关键：使用 pnpm 缓存
+          cache-dependency-path: |
+            pnpm-lock.yaml            # 指定锁文件（单包即可；monorepo 就多列几行）
+
+      - name: Enable corepack (use packageManager)
+        run: corepack enable          # 让 Node 按 package.json 的 packageManager 安装 pnpm
+
+      - name: Show pnpm version
+        run: pnpm -v                  # 仅用于日志确认版本，非必需
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile  # 严格按锁文件安装，等价 npm ci
+
+      - name: Lint (optional but recommended)
+        run: pnpm run lint
+
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      - name: Upload Jest coverage & report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-coverage-and-report
+          path: |
+            coverage/**
+            docs/jest-stare/**
+          if-no-files-found: ignore
+
+  e2e:
+    name: E2E (Cypress)
+    runs-on: ubuntu-latest
+    needs: unit                       # 单测先过，再跑 e2e
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+
+      - name: Enable corepack (use packageManager)
+        run: corepack enable
 
       - name: Install deps
-        run: npm ci                 # 安装依赖
+        run: pnpm install --frozen-lockfile
 
       - name: Build app
-        run: npm run build          # 生产构建（Webpack），输出 dist 文件夹
+        run: pnpm run build           # 你脚本里把 build 指到 webpack 生产构建
 
       - name: Run Cypress
-        uses: cypress-io/github-action@v6   # 官方提供的 Cypress Action
+        uses: cypress-io/github-action@v6
         with:
-          start: npm run start:prod         # 启动静态服务器（http-server）
-          wait-on: 'http://localhost:3000'  # 等待端口可访问再跑测试
-          wait-on-timeout: 120              # 最多等 120 秒，避免无限 hang
-          command: npm run test:e2e:ci      # 执行 e2e 测试（无头模式）
-          browser: chrome                   # 使用 Chrome 浏览器（比 Electron 更贴近真实用户）
-          headed: false                     # 无界面模式（CI 环境常用）
+          start: pnpm run start:prod  # http-server 启 dist
+          wait-on: 'http://localhost:3000'
+          wait-on-timeout: 120
+          command: pnpm run test:e2e:ci
+          browser: chrome
+          headed: false
         env:
-          CYPRESS_baseUrl: http://localhost:3000   # 设置环境变量，供 Cypress 使用
+          CYPRESS_baseUrl: http://localhost:3000
 
       - name: Upload Cypress artifacts on failure
-        if: failure()    # 仅在 E2E 测试失败时执行
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cypress-artifacts   # 上传的视频和截图，方便排查
+          name: cypress-artifacts
           path: |
-            cypress/videos/**       # Cypress 录制的失败视频
-            cypress/screenshots/**  # 截图
+            cypress/videos/**
+            cypress/screenshots/**
           if-no-files-found: ignore

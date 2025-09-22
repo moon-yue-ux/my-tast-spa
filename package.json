@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "npm run client:prod",
+    "build": "pnpm run client:prod",
     "start:prod": "http-server dist -p 3000 -s",
     "test:e2e:ci": "cypress run",
 
