@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# 仍然只跑单测（e2e 慢，放到 CI）
+npm run test:unit --silent
