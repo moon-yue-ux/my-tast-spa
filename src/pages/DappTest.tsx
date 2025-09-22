@@ -1,5 +1,5 @@
 const DappTest = () => {
-  return 'DappTest';
+	return "DappTest";
 };
 
 export default DappTest;

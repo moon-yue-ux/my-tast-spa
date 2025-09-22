@@ -12,29 +12,32 @@
 //     draft.data = '456'
 // })
 
-import { Draft, produce, freeze } from 'immer';
-import { useCallback, useState } from 'react';
+import { type Draft, freeze, produce } from "immer";
+import { useCallback, useState } from "react";
+
 type DraftFunction<S> = (draft: Draft<S>) => void;
 type Update<S> = (arg: S | DraftFunction<S>) => void;
 type ImmerHook<S> = [S, Update<S>];
-type NotFn<T> = T extends Function ? never : T;
+type NotFn<T> = T extends (...args: unknown[]) => unknown ? never : T;
 // ts 函数签名
-export function useImmer<S>(init: NotFn<S> | (() => NotFn<S>)): ImmerHook<NotFn<S>>;
+export function useImmer<S>(
+	init: NotFn<S> | (() => NotFn<S>),
+): ImmerHook<NotFn<S>>;
 export function useImmer<T>(initValue: T) {
-  const [val, updateValue] = useState(
-    freeze(typeof initValue === 'function' ? initValue() : initValue, true),
-  );
-  return [
-    val,
-    useCallback((updater: T | DraftFunction<T>) => {
-      if (typeof updater === 'function') {
-        //draft 中间可修改草稿
-        //   updateValue(produce(val, updater as DraftFunction<T>));
-        updateValue(produce(updater as DraftFunction<T>));
-      } else {
-        //强制更新 loadsh
-        updateValue(freeze(updater));
-      }
-    }, []),
-  ];
+	const [val, updateValue] = useState(
+		freeze(typeof initValue === "function" ? initValue() : initValue, true),
+	);
+	return [
+		val,
+		useCallback((updater: T | DraftFunction<T>) => {
+			if (typeof updater === "function") {
+				//draft 中间可修改草稿
+				//   updateValue(produce(val, updater as DraftFunction<T>));
+				updateValue(produce(updater as DraftFunction<T>));
+			} else {
+				//强制更新 loadsh
+				updateValue(freeze(updater));
+			}
+		}, []),
+	];
 }
