@@ -98,7 +98,7 @@ jobs:
 # ========== Job 3：AI:review(openAI) ==========
   ai_review:
     name: AI Code Review
-    needs: [unit_tests, e2e_tests]
+    needs: [unit, e2e]
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
