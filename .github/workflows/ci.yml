@@ -1,85 +1,124 @@
-name: CI   # 工作流名字，会显示在 GitHub Actions 界面里
+name: CI
 
-on:        # 触发条件
-  pull_request:   # 提交 PR 时触发
-  push:           # 直接 push 到 main 分支时触发
+on:
+  pull_request:          # 提 PR 自动触发
+  push:                  # 推 main 也触发（合并后兜底再测一遍）
     branches: [ main ]
 
-jobs:   # 定义多个 Job（任务），可以并行或依赖执行
-
-  unit:   # 第一个 Job：跑单元测试
+jobs:
+  # ========== Job 1：单元测试 ==========
+  unit:
     name: Unit Tests (Jest)
-    runs-on: ubuntu-latest   # 在 GitHub 提供的 Ubuntu 虚拟机上跑
-
-    steps:   # 每个 Job 包含一系列步骤
-      - name: Checkout
-        uses: actions/checkout@v4   # 拉取当前仓库代码到 runner 环境
-
-      - name: Setup Node
-        uses: actions/setup-node@v4 # 安装 Node.js 环境
-        with:
-          node-version: '20'        # 这里指定 Node 20（稳定且最新 LTS）
-          cache: 'npm'              # 缓存 node_modules，加快二次构建速度
-
-      - name: Install deps
-        run: npm ci                 # 安装依赖，ci 保证一致性（锁定 package-lock）
-
-      - name: Lint (optional but recommended)
-        run: npm run lint           # 跑 ESLint 检查代码风格（非必须，但推荐）
-
-      - name: Unit tests
-        run: npm run test:unit      # 执行单元测试（Jest）
-
-      - name: Upload Jest coverage & report
-        if: success() || failure()  # 无论测试成功还是失败都执行（方便排查）
-        uses: actions/upload-artifact@v4
-        with:
-          name: jest-coverage-and-report  # 上传产物的名字
-          path: |                         # 指定要保存的目录
-            coverage/**                   # Jest 生成的覆盖率文件
-            docs/jest-stare/**            # Jest-stare 报告
-          if-no-files-found: ignore       # 如果没找到文件就忽略，不报错
-
-
-  e2e:   # 第二个 Job：跑 Cypress E2E 测试
-    name: E2E (Cypress)
     runs-on: ubuntu-latest
-    needs: unit                # 等 unit job 先跑完（保证单元测过了再跑 e2e）
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4   # 同样先拉取代码
+        uses: actions/checkout@v4        # 1) 拉取仓库代码
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4      # 2) 安装 Node（只装 Node，不做包管理缓存）
         with:
           node-version: '20'
-          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4       # 3) 安装 pnpm，并开启基于 pnpm-lock.yaml 的缓存
+        with:
+          # 建议在 package.json 写 "packageManager": "pnpm@9.x"，这里就不用显式指定 version
+          run_install: false             # 此步只装 pnpm，本步不安装依赖
+
+      - name: Show pnpm version
+        run: pnpm -v                     # 4) 打印版本，确认和本地一致（可删）
 
       - name: Install deps
-        run: npm ci                 # 安装依赖
+        run: pnpm install --frozen-lockfile   # 5) 严格按 pnpm-lock.yaml 安装，等价 npm ci
 
-      - name: Build app
-        run: npm run build          # 生产构建（Webpack），输出 dist 文件夹
+      - name: Lint (Biome)
+        run: pnpm exec biome check ./src # 6) 代码规范检查（使用 Biome）
 
-      - name: Run Cypress
-        uses: cypress-io/github-action@v6   # 官方提供的 Cypress Action
-        with:
-          start: npm run start:prod         # 启动静态服务器（http-server）
-          wait-on: 'http://localhost:3000'  # 等待端口可访问再跑测试
-          wait-on-timeout: 120              # 最多等 120 秒，避免无限 hang
-          command: npm run test:e2e:ci      # 执行 e2e 测试（无头模式）
-          browser: chrome                   # 使用 Chrome 浏览器（比 Electron 更贴近真实用户）
-          headed: false                     # 无界面模式（CI 环境常用）
-        env:
-          CYPRESS_baseUrl: http://localhost:3000   # 设置环境变量，供 Cypress 使用
+      - name: Unit tests
+        run: pnpm run test:unit          # 7) 跑 Jest 单测（你脚本里已配置）
 
-      - name: Upload Cypress artifacts on failure
-        if: failure()    # 仅在 E2E 测试失败时执行
+      - name: Upload Jest coverage & report
+        if: success() || failure()       # 8) 不论成功失败都上传产物，方便排查
         uses: actions/upload-artifact@v4
         with:
-          name: cypress-artifacts   # 上传的视频和截图，方便排查
+          name: jest-coverage-and-report
           path: |
-            cypress/videos/**       # Cypress 录制的失败视频
-            cypress/screenshots/**  # 截图
+            coverage/**
+            docs/jest-stare/**
           if-no-files-found: ignore
+
+  # ========== Job 2：E2E（Cypress） ==========
+  e2e:
+    name: E2E (Cypress)
+    runs-on: ubuntu-latest
+    needs: unit                          # 先确保单测通过，再跑 e2e（省时间、好定位）
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4        # 1) 拉代码
+
+      - name: Setup Node
+        uses: actions/setup-node@v4      # 2) 装 Node
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4       # 3) 装 pnpm + 启用缓存
+        with:
+          run_install: false
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile   # 4) 安装依赖
+
+      - name: Build app
+        run: pnpm run build               # 5) 生产构建（你已让 build 指向 webpack --mode production）
+
+      - name: Run Cypress
+        uses: cypress-io/github-action@v6 # 6) 官方 Cypress Action（省去浏览器/Xvfb 自配）
+        with:
+          start: pnpm run start:prod      # 启静态服务器：http-server dist -p 3000 -s
+          wait-on: 'http://localhost:3000' # 等待服务就绪，避免“端口未起”导致偶发红
+          wait-on-timeout: 120            # 最多等 120s
+          command: pnpm run test:e2e:ci   # 无头跑 e2e：cypress run
+          browser: chrome                 # 用 Chrome，更贴近真实用户（也可改 electron 更快）
+          headed: false
+        env:
+          CYPRESS_baseUrl: http://localhost:3000   # 与 cypress.config.ts 的 baseUrl 对齐
+
+      - name: Upload Cypress artifacts on failure
+        if: failure()                     # 7) 仅失败时上传视频/截图，方便远程排查
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            cypress/videos/**
+            cypress/screenshots/**
+          if-no-files-found: ignore
+# ========== Job 3：AI:review(openAI) ==========
+  ai_review:
+    name: AI Code Review
+    needs: [unit, e2e]
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4      # 重点：安装 pnpm
+        with:
+          run_install: false
+      # 理想做法：依赖写进 package.json，再执行 install
+      - run: pnpm install --frozen-lockfile
+      # 若你暂时不想改 package.json，也可以临时装（不推荐长期这样）：
+      # - run: pnpm add @octokit/rest openai
+      - run: pnpm run ai:review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
