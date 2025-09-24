@@ -111,7 +111,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "pnpm"
+      - uses: pnpm/action-setup@v4      # 重点：安装 pnpm
+        with:
+          run_install: false
       # 理想做法：依赖写进 package.json，再执行 install
       - run: pnpm install --frozen-lockfile
       # 若你暂时不想改 package.json，也可以临时装（不推荐长期这样）：
