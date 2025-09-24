@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
+    "@octokit/rest": "^22.0.0",
     "@soda/friendly-errors-webpack-plugin": "^1.8.1",
     "@swc/core": "^1.13.5",
     "@swc/jest": "^0.2.39",
