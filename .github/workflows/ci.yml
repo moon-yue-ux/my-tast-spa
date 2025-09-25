@@ -165,6 +165,6 @@ jobs:
       with:
         apiToken: ${{ secrets.CF_API_TOKEN }}       # 已在 repo Secrets 配置
         accountId: ${{ secrets.CF_ACCOUNT_ID }}     # 已在 repo Secrets 配置
-        projectName: your-pages-project             # 首次会自动创建该项目名
+        projectName: my-test-spa-cd             # 首次会自动创建该项目名
         directory: ${{ env.DIST_DIR }}              # 上传刚才构建出的静态目录
         gitHubToken: ${{ secrets.GITHUB_TOKEN }}    # 回写部署状态（可选）
