@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:          # 提 PR 自动触发
   push:                  # 推 main 也触发（合并后兜底再测一遍）
-    branches: [ main ]
+    branches: [ main, dev ]
 
 jobs:
   # ========== Job 1：单元测试 ==========
@@ -95,7 +95,7 @@ jobs:
             cypress/videos/**
             cypress/screenshots/**
           if-no-files-found: ignore
-# ========== Job 3：AI:review(openAI) ==========
+  # ========== Job 3：AI:review(openAI) ==========
   ai_review:
     name: AI Code Review
     needs: [unit, e2e]
@@ -122,3 +122,49 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# ========== 部署 Job ==========
+  deploy:
+    name: Deploy to Cloudflare Pages
+    needs: [unit, e2e]   # 测试&AI审查都过了再发
+    if: ${{ github.ref == 'refs/heads/main' }}  # 只在 main 分支触发发布
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      DIST_DIR: dist                                 # 你的构建输出目录（如 Vite 默认为 dist）
+      PNP_VERSION: 10.15.0                            # 固定 pnpm 版本，避免云端/本地不一致
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Setup Node (with corepack)
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'pnpm'                               # 配合 pnpm 缓存
+
+    - name: Enable & pin pnpm via corepack
+      run: |
+        npm i -g corepack@latest
+        corepack enable
+        corepack prepare pnpm@${PNP_VERSION} --activate
+
+    - name: Install deps (pnpm)
+      run: pnpm install --frozen-lockfile
+
+    - name: Build (pnpm)
+      run: pnpm build
+
+    - name: Publish to Cloudflare Pages
+      uses: cloudflare/pages-action@v1
+      with:
+        apiToken: ${{ secrets.CF_API_TOKEN }}       # 已在 repo Secrets 配置
+        accountId: ${{ secrets.CF_ACCOUNT_ID }}     # 已在 repo Secrets 配置
+        projectName: my-test-spa-cd             # 首次会自动创建该项目名
+        directory: ${{ env.DIST_DIR }}              # 上传刚才构建出的静态目录
+        gitHubToken: ${{ secrets.GITHUB_TOKEN }}    # 回写部署状态（可选）

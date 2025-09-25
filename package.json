@@ -20,6 +20,7 @@
     "prepare": "husky",
     "ai:review": "node scripts/ai/ai-review.mjs"
   },
+  "engines": { "node": ">=20" },
   "packageManager": "pnpm@10.15.0",
   "keywords": [],
   "author": "",
